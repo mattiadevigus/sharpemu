@@ -75,6 +75,8 @@ public sealed class TextureTransferLayout
         {
             GuestPixelFormat.Bits5_5_5_1UNorm => (Format.A1R5G5B5UnormPack16, ColorComponentMap.Bgra),
             GuestPixelFormat.Bits1_5_5_5UNorm => (Format.R5G5B5A1UnormPack16, ColorComponentMap.Abgr),
+            // The host keeps the 2-bit field as alpha in the high bits; only the GPU reads these targets back.
+            GuestPixelFormat.Bits2_10_10_10UNorm => (Format.A2B10G10R10UnormPack32, ColorComponentMap.Abgr),
             GuestPixelFormat.Bits4_4_4_4UNorm => (Format.R4G4B4A4UnormPack16, ColorComponentMap.Abgr),
             _ => (GuestPixelFormats.HostFormat(guestFormat), ColorComponentMap.Identity),
         };

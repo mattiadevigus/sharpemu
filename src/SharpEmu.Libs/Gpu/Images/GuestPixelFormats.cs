@@ -361,6 +361,8 @@ public static class GuestPixelFormats
         new(GuestPixelFormat.Bits5_6_5UNorm, 2, 0, 2, true, false),
         new(GuestPixelFormat.Bits5_5_5_1UNorm, 2, 0, 2, true, false),
         new(GuestPixelFormat.Bits1_5_5_5UNorm, 0, 0, 2, false, false),
+        // Render target only, like 1:5:5:5: Vulkan has no 32-bit format with the 2-bit field in the low bits.
+        new(GuestPixelFormat.Bits2_10_10_10UNorm, 0, 0, 4, false, false),
         new(GuestPixelFormat.Bits4_4_4_4UNorm, 2, 0, 2, true, false),
         new(GuestPixelFormat.Fmask8S2F1, 1, 0, 1, true, false),
         new(GuestPixelFormat.Fmask8S4F1, 1, 0, 1, true, false),
