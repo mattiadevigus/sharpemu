@@ -1323,6 +1323,7 @@ public sealed unsafe partial class DirectExecutionBackend : INativeCpuBackend, I
 	{
 		Console.Error.WriteLine($"[LOADER][INFO] Setting up {importStubs.Count} import stubs...");
 		ClearImportHandlerTrampolines();
+		_nativeAgcText = 0;
 		_importEntries = new ImportStubEntry[importStubs.Count];
 		HashSet<ulong> hashSet = new HashSet<ulong>(importStubs.Keys);
 		int num = 0;
@@ -1369,6 +1370,12 @@ public sealed unsafe partial class DirectExecutionBackend : INativeCpuBackend, I
 					Console.Error.WriteLine(
 						$"[LOADER][INFO] LLE redirect: 0x{num4:X16} {text2} -> {resolvedSymbol}@0x{targetAddress:X16}");
 				}
+				num++;
+				continue;
+			}
+			if (TryInstallNativeAgcImport(text2, num, (nint)(long)num4))
+			{
+				num2++;
 				num++;
 				continue;
 			}
