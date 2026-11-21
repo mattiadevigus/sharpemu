@@ -1777,6 +1777,8 @@ public sealed unsafe partial class DirectExecutionBackend : INativeCpuBackend, I
 			// times a second, so the import transition alone cost a core.
 			"ob5xAW4ln-0" =>
 			[
+				0x48, 0x85, 0xFF,             // test rdi, rdi: a null string finds nothing, as the HLE export answered
+				0x74, 0x15,                   // jz missing
 				0x0F, 0xB6, 0x0F,             // loop: movzx ecx, byte [rdi]
 				0x40, 0x38, 0xF1,             // cmp cl, sil
 				0x74, 0x09,                   // je found
