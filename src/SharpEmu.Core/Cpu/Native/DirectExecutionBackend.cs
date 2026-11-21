@@ -1498,8 +1498,46 @@ public sealed unsafe partial class DirectExecutionBackend : INativeCpuBackend, I
 		}
 	}
 
+	// SHARPEMU_NATIVE_MEMCPY=1: memcpy and memmove run as host rep movsb stubs instead of HLE imports. The guest then
+	// pays no import transition for them, and their stores reach guest memory the way inline guest stores do (page
+	// faults and write tracking), not through the emulator's managed write path.
+	private static readonly bool NativeMemcpyEnabled =
+		string.Equals(Environment.GetEnvironmentVariable("SHARPEMU_NATIVE_MEMCPY"), "1", StringComparison.Ordinal);
+
+	private static ReadOnlySpan<byte> NativeMemcpyCode =>
+	[
+		0x48, 0x89, 0xF8,             // mov rax, rdi
+		0x48, 0x89, 0xD1,             // mov rcx, rdx
+		0xF3, 0xA4,                   // rep movsb
+		0xC3,                         // ret
+	];
+
+	private static ReadOnlySpan<byte> NativeMemmoveCode =>
+	[
+		0x48, 0x89, 0xF8,             // mov rax, rdi
+		0x48, 0x89, 0xD1,             // mov rcx, rdx
+		0x48, 0x39, 0xF7,             // cmp rdi, rsi
+		0x76, 0x18,                   // jbe forward
+		0x4C, 0x8D, 0x04, 0x16,       // lea r8, [rsi+rdx]
+		0x4C, 0x39, 0xC7,             // cmp rdi, r8
+		0x73, 0x0F,                   // jae forward
+		0x48, 0x8D, 0x74, 0x16, 0xFF, // lea rsi, [rsi+rdx-1]
+		0x48, 0x8D, 0x7C, 0x17, 0xFF, // lea rdi, [rdi+rdx-1]
+		0xFD,                         // std
+		0xF3, 0xA4,                   // rep movsb (backward)
+		0xFC,                         // cld
+		0xC3,                         // ret
+		0xF3, 0xA4,                   // forward: rep movsb
+		0xC3,                         // ret
+	];
+
 	private unsafe bool TryCreateNativeImportIntrinsic(string nid, out nint address)
 	{
+		if (NativeMemcpyEnabled && nid is "Q3VBxCXhUHs" or "+P6FRGH4LfA")
+		{
+			return TryInstallNativeIntrinsic(nid, nid == "Q3VBxCXhUHs" ? NativeMemcpyCode : NativeMemmoveCode, out address);
+		}
+
 		if (IsHlePreferredNid(nid))
 		{
 			address = 0;
@@ -1746,6 +1784,11 @@ public sealed unsafe partial class DirectExecutionBackend : INativeCpuBackend, I
 			],
 			_ => default,
 		};
+		return TryInstallNativeIntrinsic(nid, code, out address);
+	}
+
+	private unsafe bool TryInstallNativeIntrinsic(string nid, ReadOnlySpan<byte> code, out nint address)
+	{
 		if (code.IsEmpty)
 		{
 			address = 0;
