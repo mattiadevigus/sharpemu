@@ -322,6 +322,13 @@ public sealed partial class DirectExecutionBackend
 			RecordOwnershipTrace(importName, argPackPtr, ownershipCaller, true, ownershipResult);
 			return ownershipResult;
 		}
+		if (ImportTimeProfile.Enabled && (uint)importIndex < (uint)_importEntries.Length)
+		{
+			var scope = new ImportTimeProfile.Scope(importIndex, _importEntries[importIndex].Export?.Name ?? _importEntries[importIndex].Nid);
+			var timed = DispatchImportCore(importIndex, argPackPtr);
+			scope.End();
+			return timed;
+		}
 		if (_mutexTraceAddress == 0 || (uint)importIndex >= (uint)_importEntries.Length)
 			return DispatchImportCore(importIndex, argPackPtr);
 		var name = _importEntries[importIndex].Export?.Name ?? _importEntries[importIndex].Nid;
@@ -1949,6 +1956,20 @@ public sealed partial class DirectExecutionBackend
 			"8aI7R7WaOlc" or // sceAmprCommandBufferConstructor
 			"zgXifHT9ErY" or // sceVideoOutIsFlipPending
 			"V++UgBtQhn0" or // sceAgcGetDataPacketPayloadAddress
+			"d-6uF9sZDIU" or // sceAgcSetCxRegIndirectPatchAddRegisters
+			"z2duB-hHQSM" or // sceAgcSetShRegIndirectPatchAddRegisters
+			"vRoArM9zaIk" or // sceAgcSetUcRegIndirectPatchAddRegisters
+			"vcmNN+AAXnY" or // sceAgcSetCxRegIndirectPatchSetAddress
+			"Qrj4c+61z4A" or // sceAgcSetShRegIndirectPatchSetAddress
+			"6lNcCp+fxi4" or // sceAgcSetUcRegIndirectPatchSetAddress
+			"D9sr1xGUriE" or // sceAgcCreatePrimState
+			"HV4j+E0MBHE" or // sceAgcCreateInterpolantMapping
+			"n2fD4A+pb+g" or // sceAgcCbSetShRegisterRangeDirect
+			"q88lQ+GP5Yk" or // sceAgcDcbDrawIndex
+			"ZvwO9euwYzc" or // sceAgcDcbSetCxRegistersIndirect
+			"hvUfkUIQcOE" or // sceAgcDcbSetUcRegistersIndirect
+			"-HOOCn0JY48" or // sceAgcDcbSetShRegistersIndirect
+			"GIIW2J37e70" or // sceAgcDcbSetIndexSize
 			"qj7QZpgr9Uw" or // Graphics context-state operation
 			"LtTouSCZjHM" or // sceAgcCbNop
 			"k3GhuSNmBLU" or // sceAgcCbDispatch

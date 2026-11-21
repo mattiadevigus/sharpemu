@@ -372,8 +372,18 @@ public sealed partial class DirectExecutionBackend
 	}
 
 
+	private static readonly bool GuestSamplerLiveReports =
+		Environment.GetEnvironmentVariable("SHARPEMU_PROFILE_GUEST_RIP_LIVE") == "1";
+
 	private void BufferGuestSamplerReport(string message)
 	{
+		// A forced exit (or a crash during shutdown) skips ProcessExit and loses the buffered reports;
+		// SHARPEMU_PROFILE_GUEST_RIP_LIVE=1 writes each report as soon as its window ends instead.
+		if (GuestSamplerLiveReports)
+		{
+			Console.Error.WriteLine($"ticks={Stopwatch.GetTimestamp()} {message}");
+			return;
+		}
 		lock (_guestSamplerReportGate)
 		{
 			if (_guestSamplerReportsClosed) return;

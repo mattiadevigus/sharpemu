@@ -664,17 +664,27 @@ public static partial class AgcExports
             return SetReturn(ctx, OrbisGen2Result.ORBIS_GEN2_ERROR_MEMORY_FAULT);
         }
 
-        if (ucRegistersAddress != 0 &&
-            (!CopyShaderRegister(ctx, specialsAddress + ShaderSpecialGeCntlOffset, ucRegistersAddress) ||
-             !CopyShaderRegister(
-                 ctx,
-                 (hullSpecialsAddress != 0 ? hullSpecialsAddress : specialsAddress) +
-                     ShaderSpecialGeUserVgprEnOffset,
-                 ucRegistersAddress + 8) ||
-             !TryWriteUInt32(ctx, ucRegistersAddress + 16, VgtPrimitiveType) ||
-             !TryWriteUInt32(ctx, ucRegistersAddress + 20, primitiveType)))
+        if (ucRegistersAddress != 0)
         {
-            return SetReturn(ctx, OrbisGen2Result.ORBIS_GEN2_ERROR_MEMORY_FAULT);
+            // Three (register, value) pairs, built here and written with one guest write: titles call this per
+            // draw, and each separate write pays the guest write path.
+            Span<uint> ucRegisters = stackalloc uint[6];
+            if (!TryReadUInt32Pair(ctx, specialsAddress + ShaderSpecialGeCntlOffset, out ucRegisters[0], out ucRegisters[1]) ||
+                !TryReadUInt32Pair(
+                    ctx,
+                    (hullSpecialsAddress != 0 ? hullSpecialsAddress : specialsAddress) + ShaderSpecialGeUserVgprEnOffset,
+                    out ucRegisters[2],
+                    out ucRegisters[3]))
+            {
+                return SetReturn(ctx, OrbisGen2Result.ORBIS_GEN2_ERROR_MEMORY_FAULT);
+            }
+
+            ucRegisters[4] = VgtPrimitiveType;
+            ucRegisters[5] = primitiveType;
+            if (!TryWriteCommandDwords(ctx, ucRegistersAddress, ucRegisters))
+            {
+                return SetReturn(ctx, OrbisGen2Result.ORBIS_GEN2_ERROR_MEMORY_FAULT);
+            }
         }
 
         TraceAgc(
@@ -871,10 +881,7 @@ public static partial class AgcExports
         ulong hullSpecialsAddress,
         uint primitiveType)
     {
-        var stagesAddress = geometrySpecialsAddress + ShaderSpecialVgtShaderStagesEnOffset;
-        if (!TryReadUInt32(ctx, stagesAddress, out var stagesOffset) ||
-            !TryReadUInt32(ctx, stagesAddress + sizeof(uint), out var stagesValue) ||
-            !TryWriteUInt32(ctx, destinationAddress, stagesOffset))
+        if (!TryReadUInt32Pair(ctx, geometrySpecialsAddress + ShaderSpecialVgtShaderStagesEnOffset, out var stagesOffset, out var stagesValue))
         {
             return false;
         }
@@ -883,9 +890,7 @@ public static partial class AgcExports
         uint outputPrimitiveValue;
         if ((stagesValue & VgtShaderStagesGsEnableBit) != 0)
         {
-            var outputAddress = geometrySpecialsAddress + ShaderSpecialVgtGsOutPrimTypeOffset;
-            if (!TryReadUInt32(ctx, outputAddress, out outputPrimitiveOffset) ||
-                !TryReadUInt32(ctx, outputAddress + sizeof(uint), out outputPrimitiveValue))
+            if (!TryReadUInt32Pair(ctx, geometrySpecialsAddress + ShaderSpecialVgtGsOutPrimTypeOffset, out outputPrimitiveOffset, out outputPrimitiveValue))
             {
                 return false;
             }
@@ -905,21 +910,31 @@ public static partial class AgcExports
             }
 
             stagesValue |= hullStagesValue;
-            if ((stagesValue & VgtShaderStagesGsEnableBit) == 0)
+            if ((stagesValue & VgtShaderStagesGsEnableBit) == 0 &&
+                !TryReadUInt32Pair(ctx, hullSpecialsAddress + ShaderSpecialVgtGsOutPrimTypeOffset, out outputPrimitiveOffset, out outputPrimitiveValue))
             {
-                var hullOutputAddress = hullSpecialsAddress + ShaderSpecialVgtGsOutPrimTypeOffset;
-                if (!TryReadUInt32(ctx, hullOutputAddress, out outputPrimitiveOffset) ||
-                    !TryReadUInt32(ctx, hullOutputAddress + sizeof(uint), out outputPrimitiveValue))
-                {
-                    return false;
-                }
+                return false;
             }
         }
 
-        return TryWriteUInt32(ctx, destinationAddress + sizeof(uint), stagesValue) &&
-               TryWriteUInt32(ctx, destinationAddress + 8, outputPrimitiveOffset) &&
-               TryWriteUInt32(ctx, destinationAddress + 12, outputPrimitiveValue);
+        // Two (register, value) pairs, written with one guest write.
+        Span<uint> registers = [stagesOffset, stagesValue, outputPrimitiveOffset, outputPrimitiveValue];
+        return TryWriteCommandDwords(ctx, destinationAddress, registers);
     }
+
+    private static bool TryReadUInt32Pair(CpuContext ctx, ulong address, out uint first, out uint second)
+    {
+        if (!TryReadUInt64(ctx, address, out var pair))
+        {
+            first = second = 0;
+            return false;
+        }
+
+        first = (uint)pair;
+        second = (uint)(pair >> 32);
+        return true;
+    }
+
     private static uint ApplyInterpolantTwoBitField(uint value, uint field, int shift)
     {
         var mask = 0x3u << shift;
@@ -1385,18 +1400,6 @@ public static partial class AgcExports
 
     private static bool IsEsGeometryShaderType(byte shaderType) =>
         shaderType is GsShaderType or GsBackShaderType;
-
-    private static bool CopyShaderRegister(CpuContext ctx, ulong sourceAddress, ulong destinationAddress)
-    {
-        if (!TryReadUInt32(ctx, sourceAddress, out var offset) ||
-            !TryReadUInt32(ctx, sourceAddress + sizeof(uint), out var value))
-        {
-            return false;
-        }
-
-        return TryWriteUInt32(ctx, destinationAddress, offset) &&
-               TryWriteUInt32(ctx, destinationAddress + sizeof(uint), value);
-    }
 
     private static bool IsFusedShaderHalfPair(byte frontType, byte backType) =>
         (frontType == GsFrontShaderType && backType == GsBackShaderType) ||

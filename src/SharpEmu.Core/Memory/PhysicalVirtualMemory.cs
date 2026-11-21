@@ -1991,6 +1991,19 @@ public sealed unsafe class PhysicalVirtualMemory : IVirtualMemory, IGuestMemoryA
 
     public bool TryRead(ulong virtualAddress, Span<byte> destination)
     {
+        if (SharpEmu.Core.Cpu.Native.ImportTimeProfile.Enabled)
+        {
+            var start = System.Diagnostics.Stopwatch.GetTimestamp();
+            var ok = TryReadUntimed(virtualAddress, destination);
+            SharpEmu.Core.Cpu.Native.ImportTimeProfile.ReadTicks += System.Diagnostics.Stopwatch.GetTimestamp() - start;
+            SharpEmu.Core.Cpu.Native.ImportTimeProfile.ReadOps++;
+            return ok;
+        }
+        return TryReadUntimed(virtualAddress, destination);
+    }
+
+    private bool TryReadUntimed(ulong virtualAddress, Span<byte> destination)
+    {
         // Backed guest memory is the shared backing itself, and the backing's view table
         // is readable without a lock; only other memory needs _gate to find its region.
         // Descriptor evaluation alone reads guest words ~40 at a time per draw here.
@@ -2220,6 +2233,19 @@ public sealed unsafe class PhysicalVirtualMemory : IVirtualMemory, IGuestMemoryA
     }
 
     public bool TryWrite(ulong virtualAddress, ReadOnlySpan<byte> source)
+    {
+        if (SharpEmu.Core.Cpu.Native.ImportTimeProfile.Enabled)
+        {
+            var start = System.Diagnostics.Stopwatch.GetTimestamp();
+            var ok = TryWriteUntimed(virtualAddress, source);
+            SharpEmu.Core.Cpu.Native.ImportTimeProfile.WriteTicks += System.Diagnostics.Stopwatch.GetTimestamp() - start;
+            SharpEmu.Core.Cpu.Native.ImportTimeProfile.WriteOps++;
+            return ok;
+        }
+        return TryWriteUntimed(virtualAddress, source);
+    }
+
+    private bool TryWriteUntimed(ulong virtualAddress, ReadOnlySpan<byte> source)
     {
         // A managed write into a page the guest-image write tracker has
         // protected surfaces as a fatal AccessViolation — the runtime turns
