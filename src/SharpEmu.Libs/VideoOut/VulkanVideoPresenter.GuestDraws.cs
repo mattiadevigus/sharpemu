@@ -98,6 +98,8 @@ internal static unsafe partial class VulkanVideoPresenter
             (6, 7, _) or (7, 7, _) or (6, 0, _) => Format.B10G11R11UfloatPack32,
             (9, _, 1) => Format.A2R10G10B10UnormPack32,
             (9, _, _) => Format.A2B10G10R10UnormPack32,
+            // 2_10_10_10 has its 2-bit field lowest; the host keeps it as alpha in the high bits (hostToStorage below).
+            (8, 0, _) => Format.A2B10G10R10UnormPack32,
             (10, 1, _) => Format.R8G8B8A8SNorm,
             (10, 4, _) => Format.R8G8B8A8Uint,
             (10, 5, _) => Format.R8G8B8A8Sint,
@@ -166,6 +168,8 @@ internal static unsafe partial class VulkanVideoPresenter
         var hostToStorage = dataFormat switch
         {
             9 when componentSwap == 1 => new Gen5ColorComponentMapping(0xC6),
+            // Storage fields 0..3 (2-bit field first) are host alpha, blue, green, red.
+            8 => new Gen5ColorComponentMapping(0x1B),
             10 when componentSwap == 1 && numberType is 0 or 6 or 9 =>
                 new Gen5ColorComponentMapping(0xC6),
             _ => Gen5ColorComponentMapping.Identity,
@@ -186,7 +190,7 @@ internal static unsafe partial class VulkanVideoPresenter
             1 or 2 or 4 or 20 or 29 or 36 or 49 => 1,
             3 or 5 or 11 or 75 => 2,
             6 or 7 or 16 => 3,
-            9 or 10 or 12 or 13 or 14 or 22 or 56 or 62 or 64 or 71 => 4,
+            8 or 9 or 10 or 12 or 13 or 14 or 22 or 56 or 62 or 64 or 71 => 4,
             _ => 0,
         };
         return componentCount != 0;

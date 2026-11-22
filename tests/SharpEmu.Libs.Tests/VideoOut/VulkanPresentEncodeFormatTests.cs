@@ -26,6 +26,19 @@ public sealed class VulkanPresentEncodeFormatTests
         Assert.True(decoded.ExportMapping.IsIdentity);
     }
 
+    [Fact]
+    public void ReversedTwoTenTenTenTargetExportsStraightToTheHostChannels()
+    {
+        // The GT7 demo binds data format 8 with the reversed order: red lands in the top field, which the host keeps as red.
+        Assert.True(VulkanVideoPresenter.TryDecodeRenderTargetFormat(8, 0, 2, out var reversed));
+        Assert.Equal(Format.A2B10G10R10UnormPack32, reversed.Format);
+        Assert.Equal(SharpEmu.ShaderCompiler.Gen5PixelOutputKind.Float, reversed.OutputKind);
+        Assert.True(reversed.ExportMapping.IsIdentity);
+
+        Assert.True(VulkanVideoPresenter.TryDecodeRenderTargetFormat(8, 0, 0, out var standard));
+        Assert.False(standard.ExportMapping.IsIdentity);
+    }
+
     [Theory]
     [InlineData(13u, 4u, Format.R32G32B32A32Uint, SharpEmu.ShaderCompiler.Gen5PixelOutputKind.Uint)]
     [InlineData(14u, 4u, Format.R32G32B32A32Uint, SharpEmu.ShaderCompiler.Gen5PixelOutputKind.Uint)]

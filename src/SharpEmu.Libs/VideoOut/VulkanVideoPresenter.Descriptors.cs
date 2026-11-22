@@ -1210,7 +1210,9 @@ internal static unsafe partial class VulkanVideoPresenter
 
         private bool IsUnmappedBufferStart(PreparedStageBindings prepared, int index, ulong address)
         {
-            if (_guestMemory.CanRead(address, 1))
+            // An address past the GPU's 40-bit space can still be readable host-side (GT7 demo), but the buffer cache
+            // cannot track it: it binds as a null buffer like an unmapped start.
+            if (address < TrackerLayout.SpaceBytes && _guestMemory.CanRead(address, 1))
             {
                 return false;
             }
@@ -1218,7 +1220,7 @@ internal static unsafe partial class VulkanVideoPresenter
             if (_unmappedBufferStarts.TryAdd((prepared.Program.Hash, index), 0))
             {
                 var resource = prepared.Resources.Info.Buffers[index];
-                Console.Error.WriteLine($"[GPU][WARN] A buffer descriptor starts in unmapped memory and binds as a null buffer: " +
+                Console.Error.WriteLine($"[GPU][WARN] A buffer descriptor starts in unmapped memory (or past the GPU address space) and binds as a null buffer: " +
                     $"address=0x{address:X16} stage={prepared.Program.Stage} hash=0x{prepared.Program.Hash:X16} " +
                     $"shader=0x{prepared.Stage.ShaderBase:X16} buffer={index} pc=0x{resource.FirstUsePc:X} " +
                     $"written={resource.Written} descriptor=[{string.Join(",", prepared.Stage.Resources.Buffers[index].Select(word => $"{word:X8}"))}] " +
@@ -1318,6 +1320,7 @@ internal static unsafe partial class VulkanVideoPresenter
                 ref var memo = ref memos[index];
                 var remembered = memo.Address == descriptor.Address && memo.Requested == requested && memo.Spans == spans;
                 var size = remembered ? memo.Size : ClampMappedSize(descriptor.Address, requested, prepared, index);
+                size = Math.Min(size, TrackerLayout.SpaceBytes - descriptor.Address);
                 PublishImagesUnderWrite(prepared.Resources.Info.Buffers[index], descriptor.Address, size);
                 if (remembered && memo.RegionStamp == _bufferCache.RegionStamp(descriptor.Address, requested))
                 {
