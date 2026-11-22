@@ -1773,6 +1773,22 @@ public sealed unsafe partial class DirectExecutionBackend : INativeCpuBackend, I
 				0x75, 0xEF,
 				0xC3,
 			],
+			// strchr: the terminator matches a zero needle, like libc. GT7's job threads call it over a million
+			// times a second, so the import transition alone cost a core.
+			"ob5xAW4ln-0" =>
+			[
+				0x0F, 0xB6, 0x0F,             // loop: movzx ecx, byte [rdi]
+				0x40, 0x38, 0xF1,             // cmp cl, sil
+				0x74, 0x09,                   // je found
+				0x84, 0xC9,                   // test cl, cl
+				0x74, 0x09,                   // je missing
+				0x48, 0xFF, 0xC7,             // inc rdi
+				0xEB, 0xEF,                   // jmp loop
+				0x48, 0x89, 0xF8,             // found: mov rax, rdi
+				0xC3,                         // ret
+				0x31, 0xC0,                   // missing: xor eax, eax
+				0xC3,                         // ret
+			],
 			"8zTFvBIAIN8" =>
 			[
 				0x49, 0x89, 0xF8,
