@@ -6888,118 +6888,130 @@ public static partial class Gen5SpirvTranslator
                     addressCursor,
                     coordinateComponentCount,
                     resource);
-                // Non-pixel samples require explicit derivatives or a level of detail.
-                // Use level zero when the instruction supplies neither.
-                var explicitLod = hasGradients || hasZeroLod || hasLod ||
-                    _stage != Gen5SpirvStage.Pixel;
-                var lod = hasZeroLod
-                    ? Float(0)
-                    : hasLod
-                        ? LoadImageFloatAddress(
-                            image,
-                            addressCursor + (int)coordinateComponentCount)
-                        : explicitLod
-                            ? Float(0)
-                            : lodOrBias;
-                if (hasOffset)
+
+                if (resource.Multisampled)
                 {
-                    // Vulkan before maintenance8 forbids the dynamic Offset
-                    // image operand on non-gather sampling operations. RDNA
-                    // offsets are per-lane VGPR values, so ConstOffset is not
-                    // equivalent. Fold the texel offset into normalized sample
-                    // coordinates using the queried mip extent instead.
-                    var offsetLod = explicitLod && !hasGradients
-                        ? lod
-                        : Float(0);
-                    coordinates = ApplyDynamicSampleOffset(
+                    // An MSAA surface bound to a sample instruction: Vulkan forbids sampling a multisampled image (the AMD
+                    // driver fails the whole pipeline), so read sample 0 of the texel the coordinates land in.
+                    sampled = UnpackImageTexel(
                         resource,
-                        imageObject,
-                        coordinates,
-                        offset,
-                        offsetLod);
-                }
-
-                var imageOperands =
-                    hasGradients ? 4u : explicitLod ? 2u : hasBias ? 1u : 0u;
-                var operands = new List<uint>
-                {
-                    imageObject,
-                    coordinates,
-                };
-
-                if (imageOperands != 0)
-                {
-                    operands.Add(imageOperands);
-                    if (hasGradients)
-                    {
-                        operands.Add(gradientX);
-                        operands.Add(gradientY);
-                    }
-                    else if (explicitLod)
-                    {
-                        operands.Add(lod);
-                    }
-                    else if (hasBias)
-                    {
-                        operands.Add(lodOrBias);
-                    }
-
-                }
-
-                if (hasCompare && resource.EmulatedCompareFunction >= 0)
-                {
-                    // A color format cannot back a Vulkan depth-compare view; compare
-                    // the sampled first channel like RDNA does for such formats.
-                    var texel = _module.AddInstruction(
-                        explicitLod ? SpirvOp.ImageSampleExplicitLod : SpirvOp.ImageSampleImplicitLod,
-                        resource.VectorType,
-                        [.. operands]);
-                    var depth = EmulatedDepthCompare(
-                        reference,
-                        _module.AddInstruction(SpirvOp.CompositeExtract, _floatType, texel, 0u),
-                        resource.EmulatedCompareFunction);
-                    sampled = _module.AddInstruction(
-                        SpirvOp.CompositeConstruct,
-                        resource.VectorType,
-                        depth,
-                        depth,
-                        depth,
-                        Float(1f));
-                }
-                else if (hasCompare)
-                {
-                    // The sampler carries the compare; the depth result fills x, y, z.
-                    var drefOperands = new List<uint> { imageObject, coordinates, reference };
-                    drefOperands.AddRange(operands.Skip(2));
-                    var depth = _module.AddInstruction(
-                        explicitLod ? SpirvOp.ImageSampleDrefExplicitLod : SpirvOp.ImageSampleDrefImplicitLod,
-                        _floatType,
-                        [.. drefOperands]);
-                    sampled = _module.AddInstruction(
-                        SpirvOp.CompositeConstruct,
-                        resource.VectorType,
-                        depth,
-                        depth,
-                        depth,
-                        Float(1f));
+                        FetchMultisampledTexel(resource, imageObject, coordinates, coordinateComponentCount));
                 }
                 else
                 {
-                    sampled = _module.AddInstruction(
-                        explicitLod
-                            ? SpirvOp.ImageSampleExplicitLod
-                            : SpirvOp.ImageSampleImplicitLod,
-                        resource.VectorType,
-                        [.. operands]);
-                    sampled = UnpackImageTexel(resource, sampled);
-                }
+                    // Non-pixel samples require explicit derivatives or a level of detail.
+                    // Use level zero when the instruction supplies neither.
+                    var explicitLod = hasGradients || hasZeroLod || hasLod ||
+                        _stage != Gen5SpirvStage.Pixel;
+                    var lod = hasZeroLod
+                        ? Float(0)
+                        : hasLod
+                            ? LoadImageFloatAddress(
+                                image,
+                                addressCursor + (int)coordinateComponentCount)
+                            : explicitLod
+                                ? Float(0)
+                                : lodOrBias;
+                    if (hasOffset)
+                    {
+                        // Vulkan before maintenance8 forbids the dynamic Offset
+                        // image operand on non-gather sampling operations. RDNA
+                        // offsets are per-lane VGPR values, so ConstOffset is not
+                        // equivalent. Fold the texel offset into normalized sample
+                        // coordinates using the queried mip extent instead.
+                        var offsetLod = explicitLod && !hasGradients
+                            ? lod
+                            : Float(0);
+                        coordinates = ApplyDynamicSampleOffset(
+                            resource,
+                            imageObject,
+                            coordinates,
+                            offset,
+                            offsetLod);
+                    }
 
-                RecordMipStatistics(
-                    resource,
-                    imageObject,
-                    coordinates,
-                    hasZeroLod || hasLod ? lod : null,
-                    hasBias ? lodOrBias : Float(0));
+                    var imageOperands =
+                        hasGradients ? 4u : explicitLod ? 2u : hasBias ? 1u : 0u;
+                    var operands = new List<uint>
+                    {
+                        imageObject,
+                        coordinates,
+                    };
+
+                    if (imageOperands != 0)
+                    {
+                        operands.Add(imageOperands);
+                        if (hasGradients)
+                        {
+                            operands.Add(gradientX);
+                            operands.Add(gradientY);
+                        }
+                        else if (explicitLod)
+                        {
+                            operands.Add(lod);
+                        }
+                        else if (hasBias)
+                        {
+                            operands.Add(lodOrBias);
+                        }
+
+                    }
+
+                    if (hasCompare && resource.EmulatedCompareFunction >= 0)
+                    {
+                        // A color format cannot back a Vulkan depth-compare view; compare
+                        // the sampled first channel like RDNA does for such formats.
+                        var texel = _module.AddInstruction(
+                            explicitLod ? SpirvOp.ImageSampleExplicitLod : SpirvOp.ImageSampleImplicitLod,
+                            resource.VectorType,
+                            [.. operands]);
+                        var depth = EmulatedDepthCompare(
+                            reference,
+                            _module.AddInstruction(SpirvOp.CompositeExtract, _floatType, texel, 0u),
+                            resource.EmulatedCompareFunction);
+                        sampled = _module.AddInstruction(
+                            SpirvOp.CompositeConstruct,
+                            resource.VectorType,
+                            depth,
+                            depth,
+                            depth,
+                            Float(1f));
+                    }
+                    else if (hasCompare)
+                    {
+                        // The sampler carries the compare; the depth result fills x, y, z.
+                        var drefOperands = new List<uint> { imageObject, coordinates, reference };
+                        drefOperands.AddRange(operands.Skip(2));
+                        var depth = _module.AddInstruction(
+                            explicitLod ? SpirvOp.ImageSampleDrefExplicitLod : SpirvOp.ImageSampleDrefImplicitLod,
+                            _floatType,
+                            [.. drefOperands]);
+                        sampled = _module.AddInstruction(
+                            SpirvOp.CompositeConstruct,
+                            resource.VectorType,
+                            depth,
+                            depth,
+                            depth,
+                            Float(1f));
+                    }
+                    else
+                    {
+                        sampled = _module.AddInstruction(
+                            explicitLod
+                                ? SpirvOp.ImageSampleExplicitLod
+                                : SpirvOp.ImageSampleImplicitLod,
+                            resource.VectorType,
+                            [.. operands]);
+                        sampled = UnpackImageTexel(resource, sampled);
+                    }
+
+                    RecordMipStatistics(
+                        resource,
+                        imageObject,
+                        coordinates,
+                        hasZeroLod || hasLod ? lod : null,
+                        hasBias ? lodOrBias : Float(0));
+                }
             }
             else if (instruction.Opcode.StartsWith(
                          "ImageGather4",
@@ -7687,6 +7699,50 @@ public static partial class Gen5SpirvTranslator
         private static uint ImageCoordinateComponentCount(
             SpirvImageResource resource) =>
             ImageSpatialComponentCount(resource) + (resource.Arrayed ? 1u : 0u);
+
+        // Sample 0 of the texel normalized coordinates fall in, for a sample instruction on a multisampled image.
+        private uint FetchMultisampledTexel(SpirvImageResource resource, uint imageObject, uint coordinates, uint componentCount)
+        {
+            var image = resource.ObjectType == resource.ImageType
+                ? imageObject
+                : _module.AddInstruction(SpirvOp.Image, resource.ImageType, imageObject);
+            var integerType = ImageIntegerCoordinateType(componentCount);
+            var size = _module.AddInstruction(SpirvOp.ImageQuerySize, integerType, image);
+            var spatial = ImageSpatialComponentCount(resource);
+            var components = new uint[checked((int)componentCount)];
+            for (var index = 0u; index < componentCount; index++)
+            {
+                var coordinate = componentCount == 1
+                    ? coordinates
+                    : _module.AddInstruction(SpirvOp.CompositeExtract, _floatType, coordinates, index);
+                if (index >= spatial)
+                {
+                    // The array layer is an unnormalized index.
+                    components[index] = _module.AddInstruction(SpirvOp.ConvertFToS, _intType, Ext(2, _floatType, coordinate));
+                    continue;
+                }
+
+                var extent = componentCount == 1
+                    ? size
+                    : _module.AddInstruction(SpirvOp.CompositeExtract, _intType, size, index);
+                var scaled = _module.AddInstruction(SpirvOp.FMul, _floatType, coordinate,
+                    _module.AddInstruction(SpirvOp.ConvertSToF, _floatType, extent));
+                var texel = _module.AddInstruction(SpirvOp.ConvertFToS, _intType, Ext(8, _floatType, scaled));
+                var last = _module.AddInstruction(SpirvOp.ISub, _intType, extent, _module.Constant(_intType, 1u));
+                components[index] = Ext(45, _intType, texel, _module.Constant(_intType, 0u), last);
+            }
+
+            var texelCoordinates = componentCount == 1
+                ? components[0]
+                : _module.AddInstruction(SpirvOp.CompositeConstruct, integerType, components);
+            return _module.AddInstruction(
+                SpirvOp.ImageFetch,
+                resource.VectorType,
+                image,
+                texelCoordinates,
+                0x40,
+                _module.Constant(_intType, 0u));
+        }
 
         private uint ImageIntegerCoordinateType(uint componentCount) =>
             componentCount == 1
